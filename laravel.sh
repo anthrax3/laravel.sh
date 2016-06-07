@@ -8,19 +8,22 @@ OS=""
 OS_VERSION=""
 PROJECT=""
 PACKAGE=""
+SERVER="/var/www/html"
+UPDATE="false"
 
 main() {
   check_plataform
-  update
+  update_plataform
   check_git_installation
   check_git_config
   check_composer_installation
-  #create_project
-  #alter_composer
-  #alter_env
-  #path_permissions
-  #config
-  #laravel_install
+  create_project
+  alter_composer
+  alter_env
+  path_permissions
+  config
+  laravel_install
+  success
 }
 
 check_plataform() {
@@ -75,32 +78,25 @@ check_distro() {
       debug "detected Debian ${OS_VERSION}"
       PACKAGE="apt-get"
       ;;
+    centos*)
+      step_done
+      debug "detected CentOS ${OS_VERSION}"
+      PACKAGE="yum"
+      ;;
+    fedora*)
+      step_done
+      debug "detected Fedora ${OS_VERSION}"
+      PACKAGE="yum"
+      ;;
     *)
       step_fail
       add_report "Cannot detect the current distro."
       fail
       ;;
   esac
-
-  #if [ -e /etc/redhat-release ]; then
-  #  RELEASE_RPM=$(rpm -qf /etc/redhat-release)
-  #  RELEASE=$(rpm -q --qf '%{VERSION}' ${RELEASE_RPM})
-  #  case ${RELEASE_RPM} in
-  #    centos*)
-  #      debug "detected CentOS ${RELEASE}"
-  #      DISTRO="yum"
-  #      PACKAGES="rpm -qa"
-  #      ;;
-  #    redhat*)
-  #      debug "detected RHEL ${RELEASE}"
-  #      ;;
-  #    *)
-  #      ;;
-  #  esac
-  #fi
 }
 
-update() {
+update_plataform() {
   STOP=0
   trap abort_update SIGINT
 
@@ -147,11 +143,11 @@ check_git_installation() {
     step_done
     debug "Git detected"
   else
-    git_install
+    install_git
   fi
 }
 
-git_install() {
+install_git() {
   step_wait "Installing Git"
   if [ "${UPDATE_GIT}" = "true" ]  && \
      super ${PACKAGE} -y update git
@@ -171,14 +167,14 @@ check_git_config() {
     read -p "Informe o nome do usuário do bitbucket." username
     git config --global user.name "$username"
   else
-    echo "Git user.name: $username"
+    debug "Git user.name: $username"
   fi
   usermail=$(git config user.email)
   if [ -z "$usermail" ]; then
     read -p "Informe o email do usuário do bitbucket." useremail
     git config --global user.email $useremail
   else
-    echo "Git user.mail: $useremail"
+    debug "Git user.mail: $useremail"
   fi
 }
 
@@ -191,20 +187,21 @@ check_composer_installation() {
     debug "Composer is installed, skipping Composer installation."
     debug "  To update Composer, run the command bellow:"
     debug "  $ composer self-update"
+    update_composer
   else
     install_composer
   fi
 }
 
+update_composer() {
+  step "Update composer"
+  step_done
+  composer self-update
+}
+
 install_composer() {
   step "Installing composer"
   step_done
-  #echo "Instalando o composer"
-  #sudo $distro -y install composer
-  #php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
-  #php -r "if (hash_file('SHA384', 'composer-setup.php') === '070854512ef404f16bac87071a6db9fd9721da1684cd4589b1196c3faf71b9a2682e2311b36a5079825e155ac7ce150d') { echo 'Installer verified'; } else { echo 'Installer corrupt'; unlink('composer-setup.php'); } echo PHP_EOL;"
-  #php composer-setup.php
-  #php -r "unlink('composer-setup.php');"
   if [ ! -f "composer.phar" ]; then
     curl -O https://getcomposer.org/composer.phar
   fi
@@ -214,125 +211,154 @@ install_composer() {
   fi
 }
 
-jq_install() {
-  echo "Verificando se o jq esta instalado"
-  JQ=$($PACKAGES | grep ^jq)
-  if [ -z $($PACKAGES | grep ^jq) ]; then
-    echo "Instalando o jq"
-    sudo $distro -y install jq
-  else
-    echo "jq já instalado $JQ"
-  fi
-}
-
 create_project() {
-  echo "Criando o projeto em laravel"
-  cd /var/www/html
-  read -p "Qual o nome do projeto ?: " project
-  if [ -z "$project" ]; then
-    echo "O nome do projeto é obrigatório."
+  step "Create a new project laravel"
+  step_done
+  read -p "What the directory apache/nginx [$SERVER] ? " SERVER
+  if [ -z "$SERVER" ]; then
+    debug "The directory name apache/nginx is required."
     create_project
   fi
-  if [ ! -d "$project" ]; then
-      php composer.phar create-project --prefer-dist laravel/laravel $project
+  read -p "What is the project name ? " PROJECT
+  if [ -z "$PROJECT" ]; then
+    debug "The project name is required."
+    create_project
+  fi
+  if [ ! -d "$PROJECT" ]; then
+    cd $SERVER
+    composer create-project --prefer-dist laravel/laravel $PROJECT
   else
-    echo "O projeto [$project] já existe"
+    debug "The project [$PROJECT] already exists!"
+    UPDATE="true"
+    cd "$SERVER/$PROJECT"
+    composer update
   fi
 }
 
 alter_composer() {
-  echo "Alterando o composer do projeto"
-  jq_install
-  cd /var/www/html/$project
+  step "Changing the project composer"
+  step_done
+  install_jq
+  cd "$SERVER/$PROJECT"
   if [ -f "composer.json" ]; then
-    echo "Backup do composer.json"
-    cp composer.json composer.json.bkp
-    echo "Adicionando repositorio do Saga Core no composer.json"
-    jq '. + { "repositories": [{ "type": "git", "url": "https://bitbucket.org/sagaprojetosweb/core.git" }] }' composer.json > composer.temp && mv composer.temp composer.json
-    jq '."require-dev" |= .+ {"sagaprojetosweb/core": "2.*"}' composer.json > composer.temp && mv composer.temp composer.json
-    jq '.' composer.json
+    debug "Backup composer.json"
+    if [ ! -f "composer.json.bkp" ]; then
+        cp composer.json composer.json.bkp
+        debug "Adding repository Core Saga in composer.json"
+        jq '. + { "repositories": [{ "type": "git", "url": "https://bitbucket.org/sagaprojetosweb/core.git" }] }' composer.json > composer.temp && mv composer.temp composer.json
+        jq '.["require-dev"] |= .+ {"sagaprojetosweb/core": "2.*"}' composer.json > composer.temp && mv composer.temp composer.json
+        jq '.' composer.json
+    fi
   else
-    echo "composer.json não encontrado"
+    warn "composer.json not found"
   fi
 }
 
-sed_install() {
-  echo "Verificando se o sed esta instalado"
-  SED=$($PACKAGES | grep ^sed)
-  if [ -z "SED" ]; then
-    echo "Instalando o sed"
-    sudo $distro -y install sed
+install_jq() {
+  step "Verifying that jq is installed"
+  step_done
+  JQ=$($PACKAGES | grep ^jq)
+  if [ -z $($PACKAGES | grep ^jq) ]; then
+    debug "Installing jq"
+    super -v+ ${PACKAGE} -y install jq
   else
-    echo "sed já instalado $SED"
+    debug "jq already installed $JQ"
   fi
 }
 
 alter_env() {
-  echo "Alterando o arquivo .env do projeto"
-  sed_install
-  cd /var/www/html/$project
+  step "Changing the .env file project"
+  step_done
+  install_sed
+  cd "$SERVER/$PROJECT"
   if [ -f ".env" ]; then
-    echo "Backup do .env"
-    cp .env .env.bkp
-    read -p "Informe o DB_HOST:[127.0.0.1]" DB_HOST
+    read -p "DB_HOST [127.0.0.1]: " DB_HOST
     if [ -z "$DB_HOST" ]; then
       DB_HOST=127.0.0.1
     fi
-    read -p "Informe o DB_DATABASE: " DB_DATABASE
-    if [ -z "$DB_DATABASE:[homestead]" ]; then
+    read -p "DB_DATABASE [homestead]: " DB_DATABASE
+    if [ -z "$DB_DATABASE" ]; then
       DB_DATABASE=homestead
     fi
-    read -p "Informe o DB_USERNAME: " DB_USERNAME
-    if [ -z "$DB_USERNAME:[homestead]" ]; then
+    read -p "DB_USERNAME [homestead]: " DB_USERNAME
+    if [ -z "$DB_USERNAME" ]; then
       DB_USERNAME=homestead
     fi
-    read -p "Informe o DB_PASSWORD: " DB_PASSWORD
+    read -p "DB_PASSWORD []: " DB_PASSWORD
     #if [ -z "$DB_PASSWORD:[secret]" ]; then
       #DB_PASSWORD=secret
     #fi
-
-    echo "create database $DB_DATABASE charset utf8;" | mysql -u $DB_USERNAME -p$DB_PASSWORD
-
-    sed -i -e "s/\(DB_HOST=\).*/\1$DB_HOST/" \
+    
+    step "Create database project"
+    if echo "create database $DB_DATABASE charset utf8;" | mysql -u $DB_USERNAME -p$DB_PASSWORD; then    # allowed to fail
+        step_done
+        debug "Database $DB_DATABASE created"
+    else
+        step_fail
+        add_report "Database $DB_DATABASE not created"
+        warn
+    fi
+    
+    if [ ! -f ".env.bkp" ]; then
+        debug "Backup .env"
+        cp .env .env.bkp
+        sed -i -e "s/\(DB_HOST=\).*/\1$DB_HOST/" \
            -e "s/\(DB_DATABASE=\).*/\1$DB_DATABASE/" \
            -e "s/\(DB_USERNAME=\).*/\1$DB_USERNAME/" \
            -e "s/\(DB_PASSWORD=\).*/\1$DB_PASSWORD/" .env
+    fi
   else
-    echo ".env não encontrado"
+    debug ".env not found"
+  fi
+}
+
+install_sed() {
+  step "Verifying that sed is installed"
+  step_done
+  SED=$($PACKAGES | grep ^sed)
+  if [ -z "SED" ]; then
+    debug "Installing sed"
+    super ${PACKAGE} -y install sed
+  else
+    debug "sed already installed $SED"
   fi
 }
 
 path_permissions() {
-  echo "Alterando permissões do bootstrap/cache e storage"
-  cd /var/www/html/$project
-  if [ -d "/var/www/html/$project" ]; then
-    chmod -R 777 bootstrap/cache
-    chmod -R 777 storage
+  step "Changing permissions bootstrap/cache and storage"
+  step_done
+  if [ -d "$SERVER/$PROJECT" ]; then
+    cd "$SERVER/$PROJECT"
+    super chmod -R 777 bootstrap/cache
+    super chmod -R 777 storage
   fi
 }
 
 config() {
-  echo "Configuração do projeto"
-  cd /var/www/html/$project
-  if [ -d "/var/www/html/$project" ]; then
-    echo "Backup do config/app.php"
+  step "Project Setup"
+  step_done
+  if [ -d "$SERVER/$PROJECT" ]; then
+    cd "$SERVER/$PROJECT"
+    #debug "Backup do config/app.php"
     #cp config/app.php config/app.bkp.php
     #sed -i -e "s@RouteServiceProvider::class@RouteServiceProvider::class,\n\t\tCartalyst\Sentinel\Laravel\SentinelServiceProvider::class,\n\t\tPingpong\Modules\ModulesServiceProvider::class,\n\t\tTwigBridge\ServiceProvider::class,\n\t\tSaga\Core\ServiceProvider::class@g" config/app.php
     php artisan vendor:publish --provider="Cartalyst\Sentinel\Laravel\SentinelServiceProvider"
-    rm database/migrations/2014_10_12_000000_create_users_table.php
-    rm database/migrations/2014_10_12_100000_create_password_resets_table.php
+    if [ -f "database/migrations/2014_10_12_000000_create_users_table.php" ]; then
+        rm database/migrations/2014_10_12_000000_create_users_table.php
+    fi
+    if [ -f  "database/migrations/2014_10_12_100000_create_password_resets_table.php" ]; then
+        rm database/migrations/2014_10_12_100000_create_password_resets_table.php
+    fi
     php artisan migrate
     php artisan vendor:publish --provider="Saga\Core\ServiceProvider"
   fi
 }
 
 laravel_install() {
-  echo "Atualizando o composer"
-  cd /var/www/html
-  cp composer.phar $project/composer.phar
-  if [ -d "$project" ]; then
-    cd $project
-    php composer.phar install
+  step "Updating the composer"
+  if [ -d "$SERVER/$PROJECT" ]; then
+      cd "$SERVER/$PROJECT"
+      composer update
   fi
 }
 
@@ -495,9 +521,8 @@ fail() {
 success() {
   echo ""
   IFS="${ARRAY_SEPARATOR}"
-  if [ "${UPDATE_laravel}" = "true" ]; then
+  if [ "${UPDATE}" = "true" ]; then
     add_report "laravel has been successfully updated."
-    add_report 'Restart `laravel agent` in order for changes to take effect.'
   else
     add_report "laravel has been successfully installed."
   fi

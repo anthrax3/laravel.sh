@@ -8,10 +8,11 @@ OS=""
 OS_VERSION=""
 PROJECT=""
 PACKAGE=""
-SERVER="/var/www/html"
+SERVER=""
 UPDATE="false"
 
 main() {
+  welcome
   check_plataform
   update_plataform
   check_git_installation
@@ -22,8 +23,23 @@ main() {
   alter_env
   path_permissions
   config
-  laravel_install
+  install_laravel
   success
+}
+
+welcome() {
+  GREEN="$(tput setaf 2)"
+  printf '%s' "$GREEN"
+  printf '%s\n' '.____                                    .__              .__     '
+  printf '%s\n' '|    |   _____ ____________ ___  __ ____ |  |        _____|  |__  '
+  printf '%s\n' '|    |   \__  \\_  __ \__  \\  \/ // __ \|  |       /  ___/  |  \ '
+  printf '%s\n' '|    |___ / __ \|  | \// __ \\   /\  ___/|  |__     \___ \|   Y  \'
+  printf '%s\n' '|_______ (____  /__|  (____  /\_/  \___  >____/ /\ /____  >___|  /'
+  printf '%s\n' '        \/    \/           \/          \/       \/      \/     \/ '
+  printf '%s\n' 'Please look over the ~/.laravelrc file to select plugins, themes, and options.'
+  printf '%s\n'
+  printf '%s\n' 'p.s. Follow us at https://twitter.com/rbarros.'
+  printf '%s\n' '------------------------------------------------------------------'
 }
 
 check_plataform() {
@@ -70,23 +86,27 @@ check_distro() {
   case ${OS} in
     ubuntu*)
       step_done
-      debug "detected Ubuntu ${OS_VERSION}"
+      #debug "detected Ubuntu ${OS_VERSION}"
       PACKAGE="apt-get"
+      SERVER="/var/www"
       ;;
     debian*)
       step_done
-      debug "detected Debian ${OS_VERSION}"
+      #debug "detected Debian ${OS_VERSION}"
       PACKAGE="apt-get"
+      SERVER="/var/www"
       ;;
     centos*)
       step_done
-      debug "detected CentOS ${OS_VERSION}"
+      #debug "detected CentOS ${OS_VERSION}"
       PACKAGE="yum"
+      SERVER="/var/www/html"
       ;;
     fedora*)
       step_done
-      debug "detected Fedora ${OS_VERSION}"
+      #debug "detected Fedora ${OS_VERSION}"
       PACKAGE="yum"
+      SERVER="/var/www/html"
       ;;
     *)
       step_fail
@@ -142,21 +162,28 @@ check_git_installation() {
   if command_exists git; then
     step_done
     debug "Git detected"
-  else
+    check_git
+  fi
+}
+
+check_git() {
+  step "Checking version git"
+  step_done
+  if [ check == "yes" ]; then
+    warn "version below 1.0"
     install_git
+  else
+    debug $(git --version)
   fi
 }
 
 install_git() {
   step_wait "Installing Git"
-  if [ "${UPDATE_GIT}" = "true" ]  && \
-     super ${PACKAGE} -y update git
-     [ "${UPDATE_GIT}" != "true" ] && \
-     super ${PACKAGE} -y update git; then
+  if super ${PACKAGE} -y update git; then
     step_done
   else
     step_fail
-    add_report "${FAIL_TO_INSTALL_MSG}"
+    add_report "not installing git"
     fail
   fi
 }
@@ -214,10 +241,10 @@ install_composer() {
 create_project() {
   step "Create a new project laravel"
   step_done
-  read -p "What the directory apache/nginx [$SERVER] ? " SERVER
-  if [ -z "$SERVER" ]; then
-    debug "The directory name apache/nginx is required."
-    create_project
+  htdocs=""
+  read -p "What the directory apache/nginx [$SERVER] ? " htdocs
+  if [ "$htdocs" ]; then
+    SERVER=$htdocs
   fi
   read -p "What is the project name ? " PROJECT
   if [ -z "$PROJECT" ]; then
@@ -257,12 +284,12 @@ alter_composer() {
 install_jq() {
   step "Verifying that jq is installed"
   step_done
-  JQ=$($PACKAGES | grep ^jq)
-  if [ -z $($PACKAGES | grep ^jq) ]; then
+  if command_exists jq; then
+    debug "jq is installed, skipping jq installation."
+    debug $(jq --version)
+  else
     debug "Installing jq"
     super -v+ ${PACKAGE} -y install jq
-  else
-    debug "jq already installed $JQ"
   fi
 }
 
@@ -296,7 +323,7 @@ alter_env() {
     else
         step_fail
         add_report "Database $DB_DATABASE not created"
-        warn
+        fail
     fi
     
     if [ ! -f ".env.bkp" ]; then
@@ -315,12 +342,12 @@ alter_env() {
 install_sed() {
   step "Verifying that sed is installed"
   step_done
-  SED=$($PACKAGES | grep ^sed)
-  if [ -z "SED" ]; then
+  if command_exists sed; then
+    debug "sed already installed"
+    #debug $(sed --version)
+  else
     debug "Installing sed"
     super ${PACKAGE} -y install sed
-  else
-    debug "sed already installed $SED"
   fi
 }
 
@@ -354,7 +381,7 @@ config() {
   fi
 }
 
-laravel_install() {
+install_laravel() {
   step "Updating the composer"
   if [ -d "$SERVER/$PROJECT" ]; then
       cd "$SERVER/$PROJECT"
@@ -526,6 +553,7 @@ success() {
   else
     add_report "laravel has been successfully installed."
   fi
+  add_report '------------------------------------------------------------------'
   for report_message in $report; do
     info "$report_message"
   done

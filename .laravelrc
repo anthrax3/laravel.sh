@@ -1,0 +1,8 @@
+ROOT_UID=0
+ARRAY_SEPARATOR="#"
+OS=""
+OS_VERSION=""
+PROJECT=""
+PACKAGE=""
+SERVER="/var/www/html"
+UPDATE="false"

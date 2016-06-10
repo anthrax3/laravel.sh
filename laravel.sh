@@ -147,7 +147,8 @@ check_webserver() {
 
   if command_exists apache2; then
     SERVER="apache2"
-    HTTPD_ROOT=$(awk '/DocumentRoot/ {print $2}' /etc/apache2/sites-enabled/000-default.conf)
+    #HTTPD_ROOT=$(awk '/DocumentRoot/ {print $2}' /etc/apache2/sites-enabled/000-default.conf)
+    HTTPD_ROOT="/var/www/html"
   elif command_exists nginx; then
     SERVER="nginx"
     HTTPD_ROOT="/usr/share/nginx/html"

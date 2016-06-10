@@ -234,7 +234,7 @@ check_composer_installation() {
 update_composer() {
   step "Update composer"
   step_done
-  composer self-update
+  super composer self-update
 }
 
 install_composer() {

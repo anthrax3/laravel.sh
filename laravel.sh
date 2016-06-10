@@ -378,8 +378,6 @@ path_permissions() {
 config() {
   step "Project Setup"
   step_done
-  HTTPD_ROOT=/home/ubuntu/workspace
-  PROJECT=teste
   if [ -d "$HTTPD_ROOT/$PROJECT" ]; then
     cd "$HTTPD_ROOT/$PROJECT"
     if [ ! -f "config/app.bkp.php" ]; then

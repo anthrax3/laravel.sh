@@ -8,13 +8,15 @@ OS=""
 OS_VERSION=""
 PROJECT=""
 PACKAGE=""
-SERVER=""
 UPDATE="false"
+HTTPD_ROOT=""
+SERVER=""
 
 main() {
   welcome
   check_plataform
   update_plataform
+  check_webserver
   check_git_installation
   check_git_config
   check_composer_installation
@@ -23,7 +25,6 @@ main() {
   alter_env
   path_permissions
   config
-  install_laravel
   success
 }
 
@@ -59,7 +60,7 @@ check_plataform() {
     *armv6l*) ARCH=arm-pi ;;
   esac
 
-  if [ -z $PLATFORM ] || [ -z $PLATFORM ]; then
+  if [ -z $PLATFORM ] || [ -z $ARCH ]; then
     step_fail
     add_report "Cannot detect the current platform."
     fail
@@ -88,25 +89,21 @@ check_distro() {
       step_done
       #debug "detected Ubuntu ${OS_VERSION}"
       PACKAGE="apt-get"
-      SERVER="/var/www"
       ;;
     debian*)
       step_done
       #debug "detected Debian ${OS_VERSION}"
       PACKAGE="apt-get"
-      SERVER="/var/www"
       ;;
     centos*)
       step_done
       #debug "detected CentOS ${OS_VERSION}"
       PACKAGE="yum"
-      SERVER="/var/www/html"
       ;;
     fedora*)
       step_done
       #debug "detected Fedora ${OS_VERSION}"
       PACKAGE="yum"
-      SERVER="/var/www/html"
       ;;
     *)
       step_fail
@@ -118,7 +115,7 @@ check_distro() {
 
 update_plataform() {
   STOP=0
-  trap abort_update SIGINT
+  trap abort_update INT
 
   debug "Will be update within 10 seconds."
   debug "To prevent its update, just press CTRL+C now."
@@ -131,7 +128,7 @@ update_plataform() {
     fi
   fi
 
-  trap - SIGINT
+  trap - INT
 }
 
 abort_update() {
@@ -142,6 +139,19 @@ abort_update() {
 
 update_distro() {
   super -v+ ${PACKAGE} -y update
+}
+
+check_webserver() {
+  step "Checking webserver installation"
+  step_done
+
+  if command_exists apache2; then
+    SERVER="apache2"
+    HTTPD_ROOT=$(awk '/DocumentRoot/ {print $2}' /etc/apache2/sites-enabled/000-default.conf)
+  elif command_exists nginx; then
+    SERVER="nginx"
+    HTTPD_ROOT="/usr/share/nginx/html"
+  fi
 }
 
 verlte() {
@@ -169,7 +179,7 @@ check_git_installation() {
 check_git() {
   step "Checking version git"
   step_done
-  if [ check == "yes" ]; then
+  if [ check = "yes" ]; then
     warn "version below 1.0"
     install_git
   else
@@ -233,18 +243,18 @@ install_composer() {
     curl -O https://getcomposer.org/composer.phar
   fi
   read -p "Move composer /usr/bin/composer ?[Y/n]" bin
-  if [ "$bin" = "y|Y" ]; then
+  if [ "$bin" =~ "y|Y" ] || [ -z "$bin" ]; then
     super mv composer.phar /usr/bin/composer
   fi
 }
 
 create_project() {
-  step "Create a new project laravel"
+  step "Create a project laravel"
   step_done
   htdocs=""
-  read -p "What the directory apache/nginx [$SERVER] ? " htdocs
+  read -p "What the directory apache/nginx [$HTTPD_ROOT] ? " htdocs
   if [ "$htdocs" ]; then
-    SERVER=$htdocs
+    HTTPD_ROOT=$htdocs
   fi
   read -p "What is the project name ? " PROJECT
   if [ -z "$PROJECT" ]; then
@@ -252,13 +262,12 @@ create_project() {
     create_project
   fi
   if [ ! -d "$PROJECT" ]; then
-    cd $SERVER
+    cd $HTTPD_ROOT
     composer create-project --prefer-dist laravel/laravel $PROJECT
   else
     debug "The project [$PROJECT] already exists!"
     UPDATE="true"
-    cd "$SERVER/$PROJECT"
-    composer update
+    cd "$HTTPD_ROOT/$PROJECT"
   fi
 }
 
@@ -266,13 +275,19 @@ alter_composer() {
   step "Changing the project composer"
   step_done
   install_jq
-  cd "$SERVER/$PROJECT"
+  cd "$HTTPD_ROOT/$PROJECT"
   if [ -f "composer.json" ]; then
     debug "Backup composer.json"
     if [ ! -f "composer.json.bkp" ]; then
         cp composer.json composer.json.bkp
         debug "Adding repository Core Saga in composer.json"
-        jq '. + { "repositories": [{ "type": "git", "url": "https://bitbucket.org/sagaprojetosweb/core.git" }] }' composer.json > composer.temp && mv composer.temp composer.json
+        read -p "This computer is configured for ssh access to bitbucket ? [y/N]" ssh
+        if [ "$ssh" =~ "n|N" ] || [ -z "$ssh" ]; then
+          REPO="https://bitbucket.org/sagaprojetosweb/core.git"
+        else
+          REPO="git@bitbucket.org:sagaprojetosweb/core.git"
+        fi
+        jq --arg repo "$REPO" '. + { "repositories": [{ "type": "git", "url": $repo }] }' composer.json > composer.temp && mv composer.temp composer.json
         jq '.["require-dev"] |= .+ {"sagaprojetosweb/core": "2.*"}' composer.json > composer.temp && mv composer.temp composer.json
         jq '.' composer.json
     fi
@@ -297,7 +312,7 @@ alter_env() {
   step "Changing the .env file project"
   step_done
   install_sed
-  cd "$SERVER/$PROJECT"
+  cd "$HTTPD_ROOT/$PROJECT"
   if [ -f ".env" ]; then
     read -p "DB_HOST [127.0.0.1]: " DB_HOST
     if [ -z "$DB_HOST" ]; then
@@ -354,8 +369,8 @@ install_sed() {
 path_permissions() {
   step "Changing permissions bootstrap/cache and storage"
   step_done
-  if [ -d "$SERVER/$PROJECT" ]; then
-    cd "$SERVER/$PROJECT"
+  if [ -d "$HTTPD_ROOT/$PROJECT" ]; then
+    cd "$HTTPD_ROOT/$PROJECT"
     super chmod -R 777 bootstrap/cache
     super chmod -R 777 storage
   fi
@@ -364,8 +379,9 @@ path_permissions() {
 config() {
   step "Project Setup"
   step_done
-  if [ -d "$SERVER/$PROJECT" ]; then
-    cd "$SERVER/$PROJECT"
+  if [ -d "$HTTPD_ROOT/$PROJECT" ]; then
+    cd "$HTTPD_ROOT/$PROJECT"
+    composer update
     #debug "Backup do config/app.php"
     #cp config/app.php config/app.bkp.php
     #sed -i -e "s@RouteServiceProvider::class@RouteServiceProvider::class,\n\t\tCartalyst\Sentinel\Laravel\SentinelServiceProvider::class,\n\t\tPingpong\Modules\ModulesServiceProvider::class,\n\t\tTwigBridge\ServiceProvider::class,\n\t\tSaga\Core\ServiceProvider::class@g" config/app.php
@@ -381,16 +397,8 @@ config() {
   fi
 }
 
-install_laravel() {
-  step "Updating the composer"
-  if [ -d "$SERVER/$PROJECT" ]; then
-      cd "$SERVER/$PROJECT"
-      composer update
-  fi
-}
-
 counter() {
-  for i in {0..5}; do
+  for i in {0..10}; do
     echo -ne "$i"'\r';
     sleep 1;
     if [ "$STOP" = 1 ]; then

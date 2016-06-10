@@ -2,10 +2,10 @@
 
 ## via curl
 ```
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/rbarros/laravel.sh/master/install.sh)"
+bash <(curl -s https://raw.githubusercontent.com/rbarros/laravel.sh/dev/laravel.sh)
 ```
 
 ## via wget
 ```
-sh -c "$(wget https://raw.githubusercontent.com/rbarros/master/install.sh -O -)"
+bash <(wget https://raw.githubusercontent.com/rbarros/laravel.sh/dev/laravel.sh -O -)
 ```

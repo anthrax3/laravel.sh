@@ -277,8 +277,8 @@ alter_composer() {
   install_jq
   cd "$HTTPD_ROOT/$PROJECT"
   if [ -f "composer.json" ]; then
-    debug "Backup composer.json"
     if [ ! -f "composer.json.bkp" ]; then
+        debug "Backup composer.json"
         cp composer.json composer.json.bkp
         debug "Adding repository Core Saga in composer.json"
         if comfirm "This computer is configured for ssh access to bitbucket ?"; then
@@ -290,6 +290,7 @@ alter_composer() {
         jq '.["require-dev"] |= .+ {"sagaprojetosweb/core": "2.*"}' composer.json > composer.temp && mv composer.temp composer.json
         jq '.' composer.json
     fi
+    composer update
   else
     warn "composer.json not found"
   fi

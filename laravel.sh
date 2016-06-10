@@ -242,9 +242,8 @@ install_composer() {
   if [ ! -f "composer.phar" ]; then
     curl -O https://getcomposer.org/composer.phar
   fi
-  read -p "Move composer /usr/bin/composer ?[Y/n]" bin
-  if [ "$bin" =~ "y|Y" ] || [ -z "$bin" ]; then
-    super mv composer.phar /usr/bin/composer
+  if comfirm "Move composer /usr/bin/composer ?"; then
+      super mv composer.phar /usr/bin/composer
   fi
 }
 
@@ -281,11 +280,10 @@ alter_composer() {
     if [ ! -f "composer.json.bkp" ]; then
         cp composer.json composer.json.bkp
         debug "Adding repository Core Saga in composer.json"
-        read -p "This computer is configured for ssh access to bitbucket ? [y/N]" ssh
-        if [ "$ssh" =~ "n|N" ] || [ -z "$ssh" ]; then
-          REPO="https://bitbucket.org/sagaprojetosweb/core.git"
-        else
+        if comfirm "This computer is configured for ssh access to bitbucket ?"; then
           REPO="git@bitbucket.org:sagaprojetosweb/core.git"
+        else
+          REPO="https://bitbucket.org/sagaprojetosweb/core.git"
         fi
         jq --arg repo "$REPO" '. + { "repositories": [{ "type": "git", "url": $repo }] }' composer.json > composer.temp && mv composer.temp composer.json
         jq '.["require-dev"] |= .+ {"sagaprojetosweb/core": "2.*"}' composer.json > composer.temp && mv composer.temp composer.json
@@ -379,21 +377,24 @@ path_permissions() {
 config() {
   step "Project Setup"
   step_done
+  HTTPD_ROOT=/home/ubuntu/workspace
+  PROJECT=teste
   if [ -d "$HTTPD_ROOT/$PROJECT" ]; then
     cd "$HTTPD_ROOT/$PROJECT"
-    composer update
-    #debug "Backup do config/app.php"
-    #cp config/app.php config/app.bkp.php
-    #sed -i -e "s@RouteServiceProvider::class@RouteServiceProvider::class,\n\t\tCartalyst\Sentinel\Laravel\SentinelServiceProvider::class,\n\t\tPingpong\Modules\ModulesServiceProvider::class,\n\t\tTwigBridge\ServiceProvider::class,\n\t\tSaga\Core\ServiceProvider::class@g" config/app.php
-    php artisan vendor:publish --provider="Cartalyst\Sentinel\Laravel\SentinelServiceProvider"
-    if [ -f "database/migrations/2014_10_12_000000_create_users_table.php" ]; then
-        rm database/migrations/2014_10_12_000000_create_users_table.php
+    if [ ! -f "config/app.bkp.php" ]; then
+      debug "Backup do config/app.php"
+      cp config/app.php config/app.bkp.php
+      sed -i -e "s@RouteServiceProvider::class@RouteServiceProvider::class,\n\t\tCartalyst\\\Sentinel\\\Laravel\\\SentinelServiceProvider::class,\n\t\tPingpong\\\Modules\\\ModulesServiceProvider::class,\n\t\tTwigBridge\\\ServiceProvider::class,\n\t\tSaga\\\Core\\\ServiceProvider::class@g" config/app.php
+      php artisan vendor:publish --provider="Saga\Core\ServiceProvider"
+      php artisan vendor:publish --provider="Cartalyst\Sentinel\Laravel\SentinelServiceProvider"
+      if [ -f "database/migrations/2014_10_12_000000_create_users_table.php" ]; then
+          rm database/migrations/2014_10_12_000000_create_users_table.php
+      fi
+      if [ -f  "database/migrations/2014_10_12_100000_create_password_resets_table.php" ]; then
+          rm database/migrations/2014_10_12_100000_create_password_resets_table.php
+      fi
+      php artisan migrate
     fi
-    if [ -f  "database/migrations/2014_10_12_100000_create_password_resets_table.php" ]; then
-        rm database/migrations/2014_10_12_100000_create_password_resets_table.php
-    fi
-    php artisan migrate
-    php artisan vendor:publish --provider="Saga\Core\ServiceProvider"
   fi
 }
 
@@ -406,6 +407,20 @@ counter() {
     fi
   done; echo
 }
+
+comfirm() {
+    text="$1 [y/N]"
+    read -r -p "$text " response
+    case $response in
+        [yY][eE][sS]|[yY]) 
+            true
+            ;;
+        *)
+            false
+            ;;
+    esac
+}
+
 
 curl_or_wget() {
   CURL_BIN="curl"; WGET_BIN="wget"
